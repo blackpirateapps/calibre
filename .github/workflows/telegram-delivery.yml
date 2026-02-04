@@ -55,19 +55,19 @@ jobs:
             abs_path="$(pwd)/$ebook_path"
             filename="$(basename "$ebook_path")"
             
-            if [ ! -r "$abs_path" ]; then
-                echo "Error: File not readable: $abs_path"
-                ls -l "$abs_path"
-                continue
-            fi
-
-            echo "Sending: \"$filename\" (Size: $(du -h "$abs_path" | cut -f1))"
+            # Sanitized temp filename to avoid special char issues in curl
+            temp_name="telegram_upload_$(date +%s).${ext,,}"
+            cp "$abs_path" "$temp_name"
+            
+            echo "Sending: \"$filename\" via temp file \"$temp_name\""
             
             # Add retry logic
             for i in {1..3}; do
+                # -g disables globbing, preventing issues with [] in URLs or headers (though less likely here)
                 response=$(curl -s -w "%{http_code}" -X POST "https://api.telegram.org/bot${token}/sendDocument" \
+                  -g \
                   -F chat_id="$chat_id" \
-                  -F document=@"$abs_path" \
+                  -F document=@"$temp_name" \
                   -F caption="$filename")
                 
                 http_code="${response: -3}"
@@ -81,5 +81,6 @@ jobs:
                     sleep 5
                 fi
             done
+            rm "$temp_name"
           done
           echo "Processing complete"
