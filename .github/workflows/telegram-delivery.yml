@@ -1,0 +1,48 @@
+name: Telegram Delivery
+run-name: 'Telegram Delivery: ${{ github.ref_name }}'
+
+on:
+  workflow_run:
+    workflows: ['Calibre News Delivery']
+    types:
+      - completed
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  telegram:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    environment: calibre-news
+    env:
+      token: ${{ secrets.TELEGRAM_TOKEN }}
+      chat_id: ${{ secrets.TELEGRAM_TO }}
+      ext: ${{ secrets.FORMAT || 'epub' }}
+    steps:
+      - name: Checking Variables
+        run: |
+          if [ -z "$token" ] || [ -z "$chat_id" ]; then
+            echo "Missing TELEGRAM_TOKEN or TELEGRAM_TO secret"; exit 1
+          fi
+
+      - name: Download Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Calibre-News-Delivery
+          path: ebooks
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Send to Telegram
+        run: |
+          while read -d '' ebook_path; do
+            filename="$(basename "$ebook_path")"
+            echo "Sending: \"$filename\""
+            curl -s -X POST "https://api.telegram.org/bot${token}/sendDocument" \
+              -F chat_id="$chat_id" \
+              -F document=@"$ebook_path" \
+              -F caption="$filename"
+          done < <(find ebooks -type f -name "*.${ext,,}" -print0)
+          echo "All files sent to Telegram"
