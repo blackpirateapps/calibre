@@ -21,6 +21,8 @@ calibre/
 │   └── *.png                  # Named to match recipe titles
 ├── styles/                     # Custom CSS styles for recipes
 │   └── *.css                  # Named to match recipe titles
+├── newspapers/                 # Directory for additional news recipes
+│   └── *.recipe               # Automatically processed by Telegram workflow
 ├── *.recipe                   # Custom recipe files (Python)
 ├── recipe_list.txt            # List of built-in Calibre recipes to use
 ├── README.md                  # Setup instructions
@@ -82,8 +84,9 @@ Configure in GitHub Settings → Environments → `calibre-news`:
 
 A standalone workflow that:
 1. Installs Calibre
-2. Converts `hindu.recipe` to `the_hindu_YYYYMMDD.epub`
-3. Sends the ebook to Telegram
+2. Converts `hindu.recipe` (root) -> `hindu_YYYYMMDD.epub`
+3. Converts all recipes in `newspapers/` -> `recipe_name_YYYYMMDD.epub`
+4. Sends each ebook sequentially to Telegram
 
 | Trigger | Description |
 |---------|-------------|

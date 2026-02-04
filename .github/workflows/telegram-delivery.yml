@@ -40,60 +40,75 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Create Ebook
+      - name: Process Recipes
         run: |
           date_str=$(date +'%Y%m%d')
-          # Output file with expected name: the_hindu_YYYYMMDD.epub
-          filename="the_hindu_${date_str}.${ext,,}"
           
-          # Assuming hindu.recipe is in the root as seen in file tree
-          if [ ! -f "hindu.recipe" ]; then
-            echo "hindu.recipe not found!"
-            exit 1
+          # Function to process a single recipe
+          process_recipe() {
+            local recipe_path="$1"
+            local recipe_name="$(basename "$recipe_path" .recipe)"
+            # Standardize filename: name_YYYYMMDD.extension
+            local filename="${recipe_name}_${date_str}.${ext,,}"
+            
+            echo "---------------------------------------------------"
+            echo "Processing: $recipe_path"
+            
+            echo "Converting to temporary file..."
+            ebook-convert "$recipe_path" "temp_ebook.${ext,,}"
+            
+            echo "Renaming to: $filename"
+            mv "temp_ebook.${ext,,}" "$filename"
+            
+            # Send to Telegram
+            if [ ! -r "$filename" ]; then
+                echo "Error: Ebook file creation failed for $filename"
+                ls -l
+                return 1
+            fi
+
+            local upload_name="telegram_upload_$(date +%s)_${RANDOM}.${ext,,}"
+            cp "$filename" "$upload_name"
+            
+            echo "Sending \"$filename\" via temp file \"$upload_name\"..."
+            
+            for i in {1..3}; do
+                response=$(curl -s -w "%{http_code}" -X POST "https://api.telegram.org/bot${token}/sendDocument" \
+                  -g \
+                  -F chat_id="$chat_id" \
+                  -F document=@"$upload_name" \
+                  -F caption="$filename")
+                
+                http_code="${response: -3}"
+                
+                if [[ "$http_code" == "200" ]]; then
+                    echo "Success: $filename sent."
+                    break
+                else
+                    echo "Attempt $i failed. HTTP: $http_code."
+                    sleep 5
+                fi
+            done
+            rm "$upload_name"
+            rm "$filename" # cleanup to save space
+          }
+
+          # 1. Process root hindu.recipe
+          if [ -f "hindu.recipe" ]; then
+            process_recipe "hindu.recipe"
+          else
+            echo "hindu.recipe not found in root, skipping."
           fi
 
-          echo "Converting recipe..."
-          # Convert to "temp_hindu.epub" then rename to ensure control over filename
-          ebook-convert hindu.recipe "temp_hindu.${ext,,}"
-          
-          echo "Renaming to: $filename"
-          mv "temp_hindu.${ext,,}" "$filename"
-          
-          echo "ebook_file=$filename" >> $GITHUB_ENV
-
-      - name: Send to Telegram
-        run: |
-          filename="${{ env.ebook_file }}"
-          
-          if [ ! -r "$filename" ]; then
-             echo "Ebook file not found: $filename"
-             ls -l
-             exit 1
+          # 2. Process recipes in newspapers/ folder
+          if [ -d "newspapers" ]; then
+            shopt -s nullglob
+            for recipe in newspapers/*.recipe; do
+                process_recipe "$recipe"
+            done
+            shopt -u nullglob
+          else
+            echo "newspapers directory not found or empty."
           fi
-
-          # Use a generic name for upload to avoid curl parsing issues with special chars
-          # (Although the current naming scheme 'the_hindu_20260204.epub' is safe, this is proactive)
-          upload_name="telegram_upload_$(date +%s).${ext,,}"
-          cp "$filename" "$upload_name"
-
-          echo "Sending: \"$filename\" via temp file \"$upload_name\""
           
-          for i in {1..3}; do
-              response=$(curl -s -w "%{http_code}" -X POST "https://api.telegram.org/bot${token}/sendDocument" \
-                -g \
-                -F chat_id="$chat_id" \
-                -F document=@"$upload_name" \
-                -F caption="$filename")
-              
-              http_code="${response: -3}"
-              full_body="${response::-3}"
-
-              if [[ "$http_code" == "200" ]]; then
-                  echo "Success: $filename sent."
-                  break
-              else
-                  echo "Attempt $i failed. HTTP: $http_code. Body: $full_body"
-                  sleep 5
-              fi
-          done
-          rm "$upload_name"
+          echo "All processing complete."
