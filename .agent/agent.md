@@ -88,6 +88,12 @@ Automatically sends ebooks to Telegram after the main workflow completes:
 | **Download Artifact** | Retrieves ebooks from main workflow |
 | **Send to Telegram** | Uses `curl` to POST documents via Telegram Bot API |
 
+### Manual Trigger for Telegram Delivery
+You can manually trigger the Telegram delivery for a specific past run:
+1. Go to **Actions** → **Telegram Delivery**
+2. Click **Run workflow**
+3. Enter the **Run ID** of the "Calibre News Delivery" workflow (found in the URL of the run, e.g., `actions/runs/123456789`)
+
 ## Common Tasks
 
 ### Adding a Built-in Recipe
@@ -103,7 +109,7 @@ Automatically sends ebooks to Telegram after the main workflow completes:
 Edit the cron expression in `.github/workflows/calibre-news.yml`:
 ```yaml
 schedule:
-  - cron: '30 0 * * *'  # Daily at 00:30 UTC
+  - cron: '30 0 * * *'  # 00:30 UTC = 06:00 IST
 ```
 
 ### Manual Trigger

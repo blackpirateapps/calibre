@@ -6,6 +6,11 @@ on:
     workflows: ['Calibre News Delivery']
     types:
       - completed
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'Run ID of Calibre News Delivery'
+        required: true
 
 permissions:
   contents: read
@@ -14,7 +19,7 @@ permissions:
 jobs:
   telegram:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     environment: calibre-news
     env:
       token: ${{ secrets.TELEGRAM_TOKEN }}
@@ -32,11 +37,16 @@ jobs:
         with:
           name: Calibre-News-Delivery
           path: ebooks
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ github.event.workflow_run.id || inputs.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Send to Telegram
         run: |
+          count=$(find ebooks -type f -name "*.${ext,,}" | wc -l)
+          if [ $count -eq 0 ]; then
+             echo "No ebooks found to send"; exit 1
+          fi
+          
           while read -d '' ebook_path; do
             filename="$(basename "$ebook_path")"
             echo "Sending: \"$filename\""
