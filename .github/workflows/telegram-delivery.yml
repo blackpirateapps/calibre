@@ -2,15 +2,9 @@ name: Telegram Delivery
 run-name: 'Telegram Delivery: ${{ github.ref_name }}'
 
 on:
-  workflow_run:
-    workflows: ['Calibre News Delivery']
-    types:
-      - completed
+  schedule:
+    - cron: '30 0 * * *'
   workflow_dispatch:
-    inputs:
-      run_id:
-        description: 'Run ID of Calibre News Delivery'
-        required: true
 
 permissions:
   contents: read
@@ -19,7 +13,6 @@ permissions:
 jobs:
   telegram:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     environment: calibre-news
     env:
       token: ${{ secrets.TELEGRAM_TOKEN }}
@@ -32,55 +25,75 @@ jobs:
             echo "Missing TELEGRAM_TOKEN or TELEGRAM_TO secret"; exit 1
           fi
 
-      - name: Download Artifact
-        uses: actions/download-artifact@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          name: Calibre-News-Delivery
-          path: ebooks
-          run-id: ${{ github.event.workflow_run.id || inputs.run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          python-version: "3.12"
 
-      - name: Debug Artifacts
-        run: ls -R ebooks
+      - name: Install Calibre
+        run: |
+          sudo apt-get update
+          sudo apt-get install libegl1 libopengl0 libxcb-cursor0
+          url=https://download.calibre-ebook.com/linux-installer.sh
+          sudo -v && wget -nv -O- $url | sudo sh /dev/stdin
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Create Ebook
+        run: |
+          date_str=$(date +'%Y%m%d')
+          # Output file with expected name: the_hindu_YYYYMMDD.epub
+          filename="the_hindu_${date_str}.${ext,,}"
+          
+          # Assuming hindu.recipe is in the root as seen in file tree
+          if [ ! -f "hindu.recipe" ]; then
+            echo "hindu.recipe not found!"
+            exit 1
+          fi
+
+          echo "Converting recipe..."
+          # Convert to "temp_hindu.epub" then rename to ensure control over filename
+          ebook-convert hindu.recipe "temp_hindu.${ext,,}"
+          
+          echo "Renaming to: $filename"
+          mv "temp_hindu.${ext,,}" "$filename"
+          
+          echo "ebook_file=$filename" >> $GITHUB_ENV
 
       - name: Send to Telegram
         run: |
-          count=$(find ebooks -type f -name "*.${ext,,}" | wc -l)
-          if [ $count -eq 0 ]; then
-             echo "No ebooks found to send"; exit 1
-          fi
+          filename="${{ env.ebook_file }}"
           
-          find ebooks -type f -name "*.${ext,,}" -print0 | while read -d '' ebook_path; do
-            # Use absolute path
-            abs_path="$(pwd)/$ebook_path"
-            filename="$(basename "$ebook_path")"
-            
-            # Sanitized temp filename to avoid special char issues in curl
-            temp_name="telegram_upload_$(date +%s).${ext,,}"
-            cp "$abs_path" "$temp_name"
-            
-            echo "Sending: \"$filename\" via temp file \"$temp_name\""
-            
-            # Add retry logic
-            for i in {1..3}; do
-                # -g disables globbing, preventing issues with [] in URLs or headers (though less likely here)
-                response=$(curl -s -w "%{http_code}" -X POST "https://api.telegram.org/bot${token}/sendDocument" \
-                  -g \
-                  -F chat_id="$chat_id" \
-                  -F document=@"$temp_name" \
-                  -F caption="$filename")
-                
-                http_code="${response: -3}"
-                full_body="${response::-3}"
+          if [ ! -r "$filename" ]; then
+             echo "Ebook file not found: $filename"
+             ls -l
+             exit 1
+          fi
 
-                if [[ "$http_code" == "200" ]]; then
-                    echo "Success: $filename sent."
-                    break
-                else
-                    echo "Attempt $i failed. HTTP: $http_code. Body: $full_body"
-                    sleep 5
-                fi
-            done
-            rm "$temp_name"
+          # Use a generic name for upload to avoid curl parsing issues with special chars
+          # (Although the current naming scheme 'the_hindu_20260204.epub' is safe, this is proactive)
+          upload_name="telegram_upload_$(date +%s).${ext,,}"
+          cp "$filename" "$upload_name"
+
+          echo "Sending: \"$filename\" via temp file \"$upload_name\""
+          
+          for i in {1..3}; do
+              response=$(curl -s -w "%{http_code}" -X POST "https://api.telegram.org/bot${token}/sendDocument" \
+                -g \
+                -F chat_id="$chat_id" \
+                -F document=@"$upload_name" \
+                -F caption="$filename")
+              
+              http_code="${response: -3}"
+              full_body="${response::-3}"
+
+              if [[ "$http_code" == "200" ]]; then
+                  echo "Success: $filename sent."
+                  break
+              else
+                  echo "Attempt $i failed. HTTP: $http_code. Body: $full_body"
+                  sleep 5
+              fi
           done
-          echo "Processing complete"
+          rm "$upload_name"

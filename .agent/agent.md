@@ -80,19 +80,15 @@ Configure in GitHub Settings → Environments → `calibre-news`:
 
 ### Telegram Delivery Workflow (`.github/workflows/telegram-delivery.yml`)
 
-Automatically sends ebooks to Telegram after the main workflow completes:
+A standalone workflow that:
+1. Installs Calibre
+2. Converts `hindu.recipe` to `the_hindu_YYYYMMDD.epub`
+3. Sends the ebook to Telegram
 
-| Step | Description |
-|------|-------------|
-| **Check Variables** | Validates `TELEGRAM_TOKEN` and `TELEGRAM_TO` |
-| **Download Artifact** | Retrieves ebooks from main workflow |
-| **Send to Telegram** | Uses `curl` to POST documents via Telegram Bot API |
-
-### Manual Trigger for Telegram Delivery
-You can manually trigger the Telegram delivery for a specific past run:
-1. Go to **Actions** → **Telegram Delivery**
-2. Click **Run workflow**
-3. Enter the **Run ID** of the "Calibre News Delivery" workflow (found in the URL of the run, e.g., `actions/runs/123456789`)
+| Trigger | Description |
+|---------|-------------|
+| **Schedule** | Daily at 6:00 AM IST |
+| **Manual** | `workflow_dispatch` (No inputs required) |
 
 ## Common Tasks
 
